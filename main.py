@@ -6,6 +6,8 @@ import argparse, os
 import random
 from sklearn.decomposition import PCA
 import esm
+from sklearn.neighbors import KNeighborsRegressor
+import pandas as pd
 
 def seed_all(seed=42):
     print("[ Using Seed : ", seed, " ]")
@@ -110,14 +112,45 @@ def get_args():
     
     return args
 
+def calculate_corr(ids, embeddings, gt_ic50):
+    embeddings = [np.array(emb) for emb in embeddings]
+    n = len(embeddings)
+    pred_ic50 = []
+    for i in range(n):
+        part_emb = embeddings[:i] + embeddings[i+1:]
+        part_ic50 = gt_ic50[:i] + gt_ic50[i+1:]
+        neigh = KNeighborsRegressor(n_neighbors=1)
+        neigh.fit(part_emb, part_ic50)
+        pred_ic50.append(neigh.predict([embeddings[i]])[0])
+    # print(pred_ic50)
+    corr = np.corrcoef(pred_ic50, gt_ic50)
+    print(f'correlation between predicts and ground truth: {corr[0, 1]}')
+    
+    return corr[0, 1]
+
+def load_gt_ic50(in_file='covid-ic50.csv'):
+    with open(in_file) as f:
+        lines = f.readlines()
+    all_ic50_per_antigen = []
+    for line in lines:
+        entries = line.split()[1:]
+        all_ic50_per_antigen.append([float(e) for e in entries])
+    n_patients = len(all_ic50_per_antigen[0])
+    n_antigen = len(all_ic50_per_antigen)
+    all_ic50_per_patient = []
+    for i in range(n_patients):
+        all_ic50_per_patient.append([all_ic50_per_antigen[k][i] for k in range(n_antigen)])
+    
+    return all_ic50_per_patient
+    
 
 if __name__ == '__main__':
     args = get_args()
     seed_all(args.seed)
     os.makedirs(args.out_dir, exist_ok=True)
     if not args.cache:
-        # run_omegafold(args.fasta_file)
-        # run_esm1b(args.fasta_file)
+        run_omegafold(args.fasta_file)
+        run_esm1b(args.fasta_file)
         run_esmif()
     
     seq_dict = load_fasta(args.fasta_file)
@@ -129,3 +162,14 @@ if __name__ == '__main__':
         embeddings.append(get_esm1b_esmif_emb(sid).mean(dim=1))
     plot_pca(embeddings, seq_ids, os.path.join(args.out_dir, f"{args.output}-esm1b_esmif-pca.png"))
     
+    all_ic50 = load_gt_ic50()
+    all_corr = []
+    for gt_ic50 in reversed(all_ic50):
+        # gt_ic50 = [673.8823, 628.4006, 160.3711, 596.8648, 518.3429, 825.5709, 375.1865, 728.1084, 258.0536, 61.74173, 57.40945, 81.01727, 86.08987, 191.5347]
+        # print(gt_ic50)
+        corr = calculate_corr(seq_ids, embeddings, gt_ic50)
+        if not np.isnan(corr):
+            all_corr.append(corr)
+        # input()
+    print(f'mean corr: {np.mean(all_corr)}')
+    print(len(all_ic50))

@@ -2,3 +2,5 @@ matplotlib
 scikit-learn
 torch_geometric
 torch_scatter
+biotite
+pandas
