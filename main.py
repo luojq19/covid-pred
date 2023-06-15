@@ -126,7 +126,7 @@ def calculate_corr(ids, embeddings, gt_ic50):
     corr = np.corrcoef(pred_ic50, gt_ic50)
     print(f'correlation between predicts and ground truth: {corr[0, 1]}')
     
-    return corr[0, 1]
+    return corr[0, 1], pred_ic50
 
 def load_gt_ic50(in_file='covid-ic50.csv'):
     with open(in_file) as f:
@@ -142,7 +142,20 @@ def load_gt_ic50(in_file='covid-ic50.csv'):
         all_ic50_per_patient.append([all_ic50_per_antigen[k][i] for k in range(n_antigen)])
     
     return all_ic50_per_patient
+
+def draw_distri(dist1, dist2):
+    import seaborn as sns
     
+    sns.distplot(dist1, color='blue', label='experimental results', hist=False, rug=True)
+    sns.distplot(dist2, color='red', label='predict results', hist=False, rug=True)
+    
+    plt.legend()
+    plt.xlabel('Values')
+    plt.ylabel('Density')
+    plt.title('IC50 experimental/prediction distribution')
+    plt.xlim(0, 10000)
+    plt.savefig('ic50_distribution.png', dpi=400)
+    plt.savefig('ic50_distribution.svg', dpi=400)
 
 if __name__ == '__main__':
     args = get_args()
@@ -160,16 +173,28 @@ if __name__ == '__main__':
     embeddings = []
     for sid in seq_ids:
         embeddings.append(get_esm1b_esmif_emb(sid).mean(dim=1))
-    plot_pca(embeddings, seq_ids, os.path.join(args.out_dir, f"{args.output}-esm1b_esmif-pca.png"))
+    # plot_pca(embeddings, seq_ids, os.path.join(args.out_dir, f"{args.output}-esm1b_esmif-pca.png"))
     
     all_ic50 = load_gt_ic50()
     all_corr = []
+    gt_distribution = []
+    pred_distribution = []
     for gt_ic50 in reversed(all_ic50):
         # gt_ic50 = [673.8823, 628.4006, 160.3711, 596.8648, 518.3429, 825.5709, 375.1865, 728.1084, 258.0536, 61.74173, 57.40945, 81.01727, 86.08987, 191.5347]
         # print(gt_ic50)
-        corr = calculate_corr(seq_ids, embeddings, gt_ic50)
+        corr, pred_ic50 = calculate_corr(seq_ids, embeddings, gt_ic50)
+        
         if not np.isnan(corr):
             all_corr.append(corr)
+            gt_distribution.extend(gt_ic50)
+            pred_distribution.extend(pred_ic50)
+            # if 0.7>corr > 0.66:
+            #     print(' '.join([str(i) for i in gt_ic50]))
+            #     # print(pred_ic50)
+            #     print(' '.join([str(i) for i in pred_ic50]))
+            #     input()
         # input()
     print(f'mean corr: {np.mean(all_corr)}')
     print(len(all_ic50))
+    print(gt_distribution)
+    draw_distri(gt_distribution, pred_distribution)
